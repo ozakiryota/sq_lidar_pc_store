@@ -35,7 +35,10 @@ class SQLidarPCStore{
 		tf::TransformListener tflistener;
 		/*limit storing*/
 		const bool limit_storing = true;
-		const size_t limit_num_scans = 100;
+		const size_t limit_num_scans = 25;
+		/*
+		 * [storing time] = [limit_num_scans] x [rate of /odom (=0.02s)]
+		 */
 		std::vector<size_t> list_num_scanpoints;
 
 	public:
@@ -72,7 +75,7 @@ void SQLidarPCStore::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg)
 		ROS_ERROR("%s",ex.what());
 	}
 	
-	cloud_now->points.clear();
+	if(pc_was_added)	cloud_now->points.clear();
 	pcl::PointCloud<pcl::PointXYZI>::Ptr tmp_pc (new pcl::PointCloud<pcl::PointXYZI>);
 	pcl::fromROSMsg(pc2_trans, *tmp_pc);
 	const double laser_range = 40.0;
