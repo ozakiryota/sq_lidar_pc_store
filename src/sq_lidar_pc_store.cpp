@@ -13,6 +13,7 @@
 class SQLidarPCStore{
 	private:
 		ros::NodeHandle nh;
+		ros::NodeHandle nhPrivate;
 		/*subscribe*/
 		ros::Subscriber sub_pc;
 		ros::Subscriber sub_odom;
@@ -35,7 +36,7 @@ class SQLidarPCStore{
 		tf::TransformListener tflistener;
 		/*limit storing*/
 		const bool limit_storing = true;
-		const size_t limit_num_scans = 25;
+		int limit_num_scans = 25;
 		/*
 		 * [storing time] = [limit_num_scans] x [rate of /odom (=0.02s)]
 		 */
@@ -50,12 +51,14 @@ class SQLidarPCStore{
 };
 
 SQLidarPCStore::SQLidarPCStore()
+	: nhPrivate("~")
 {
 	sub_pc = nh.subscribe("/cloud", 1, &SQLidarPCStore::CallbackPC, this);
 	sub_odom = nh.subscribe("/odom", 1, &SQLidarPCStore::CallbackOdom, this);
 	pub = nh.advertise<sensor_msgs::PointCloud2>("/sq_lidar/stored", 1);
 	viewer.setBackgroundColor(1, 1, 1);
 	viewer.addCoordinateSystem(0.5, "axis");
+	nhPrivate.getParam("num_scans", limit_num_scans);
 }
 
 void SQLidarPCStore::CallbackPC(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -139,7 +142,7 @@ void SQLidarPCStore::Visualizer(void)
 
 	pcl::visualization::PointCloudColorHandlerGenericField<pcl::PointXYZI> intensity_distribution(cloud_stored, "intensity"); 
 	viewer.addPointCloud<pcl::PointXYZI>(cloud_stored, intensity_distribution, "cloud");
-	viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "cloud");
+	viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud");
 	
 	viewer.spinOnce();
 }

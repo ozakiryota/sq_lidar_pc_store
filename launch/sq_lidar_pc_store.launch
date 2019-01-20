@@ -4,7 +4,8 @@
 		<remap from="~/scan" to="/sq_lidar/scan"/>
 		<remap from="~/cloud" to="/cloud"/>
 	</node>
-	<node pkg="sq_lidar_pc_store" name="sq_lidar_pc_store" type="sq_lidar_pc_store"/>
-
-	<node pkg="rviz" type="rviz" name="rviz" args="-d /home/amsl/.rviz/sq2.rviz"/>
+	<node pkg="sq_lidar_pc_store" name="sq_lidar_pc_store" type="sq_lidar_pc_store">
+		<!-- optional -->
+		<!-- <param name="num_scans" type="int" value="100"/> -->
+	</node>
 </launch>
