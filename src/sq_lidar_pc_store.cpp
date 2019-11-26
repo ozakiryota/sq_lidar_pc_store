@@ -129,11 +129,11 @@ void SQLidarPCStore::CallbackOdom(const nav_msgs::OdometryConstPtr& msg)
 			std::cout << "limit storing: true" << std::endl;
 			std::cout << "number of stored scans: " << list_num_scanpoints.size() << std::endl;
 		}
+		Publisher();
 	}
 	first_callback_odom = false;
 
 	Visualizer();
-	Publisher();
 }
 
 void SQLidarPCStore::Visualizer(void)
