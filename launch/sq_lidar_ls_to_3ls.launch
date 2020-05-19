@@ -1,8 +1,7 @@
 <launch>
 	<param name="use_sim_time" value="true"/>
 
-	<!-- <node pkg="rosbag" type="play" name="player" args="&#45;&#45;clock /home/amsl/ozaki/bagfiles/sq2/outdoor_dkan/2018&#45;12&#45;11&#45;13&#45;37&#45;56.bag"/> -->
-	<node pkg="rosbag" type="play" name="player" args="--clock /home/amsl/ozaki/bagfiles/sq2/indoor_dkan/2018-05-08-19-45-05.bag"/>
+	<node pkg="rosbag" type="play" name="player" args="--clock /home/amsl/ozaki/bagfiles/sq2/outdoor_dkan/2018-12-11-13-37-56.bag"/>
 	
 	<node pkg="sq_lidar" name="sq_lidar" type="sq_lidar">
 		<param name="fixed_frame" value="/base_link"/>
@@ -13,6 +12,7 @@
 		<!-- optional -->
 		<!-- <param name="num_scans" type="int" value="25"/> -->
 	</node>
+	<node pkg="sq_lidar_pc_store" name="sq_lidar_ls_to_3ls" type="sq_lidar_ls_to_3ls" output="screen"/>
 
-	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find sq_lidar_pc_store)/rviz_config/sq2.rviz"/>
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find sq_lidar_pc_store)/rviz_config/sq_lidar_ls_to_3ls.rviz"/>
 </launch>

@@ -202,3 +202,5 @@ include_directories(
 # catkin_add_nosetests(test)
 add_executable(sq_lidar_pc_store src/sq_lidar_pc_store.cpp)
 target_link_libraries(sq_lidar_pc_store ${catkin_LIBRARIES})
+add_executable(sq_lidar_ls_to_3ls src/sq_lidar_ls_to_3ls.cpp)
+target_link_libraries(sq_lidar_ls_to_3ls ${catkin_LIBRARIES})
