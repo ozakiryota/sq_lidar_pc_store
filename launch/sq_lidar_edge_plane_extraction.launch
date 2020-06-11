@@ -17,8 +17,8 @@
 	<node pkg="sq_lidar_pc_store" name="sq_lidar_edge_plane_extraction" type="sq_lidar_edge_plane_extraction" output="screen">
 		<!-- <param name="frame_id" type="string" value="/base_link"/> -->
 		<!-- <param name="curvature_region" type="int" value="5"/> -->
-		<param name="th_flatness_edge" type="double" value="5.0e-1"/>
-		<param name="th_flatness_plane" type="double" value="5.0e-3"/>
+		<param name="th_flatness_edge" type="double" value="5.0e-2"/>
+		<param name="th_flatness_plane" type="double" value="1.0e-4"/>
 	</node>
 
 	<!-- for visualization -->

@@ -127,12 +127,13 @@ void SQLidarEdgePlaneExtraction::computeFlatness(void)
 			double diff_y = 0.0;
 			double diff_z = 0.0;
 			for(size_t j=i-_curvature_region;j<=i+_curvature_region;++j){
+				if(i==j)	continue;
 				diff_x += _pc->points[i].x - _pc->points[j].x;
 				diff_y += _pc->points[i].y - _pc->points[j].y;
 				diff_z += _pc->points[i].z - _pc->points[j].z;
 			}
 			double depth = norm(_pc->points[i].x, _pc->points[i].y, _pc->points[i].z);
-			double flatness = norm(diff_x, diff_y, diff_z)/(depth*2*_curvature_region);
+			double flatness = norm(diff_x, diff_y, diff_z)/(depth*depth*2.0*_curvature_region);
 			_pc->points[i].strength = flatness;
 
 			if(_pc->points[i].strength > _th_flatness_edge)	_pc_edge->points.push_back(_pc->points[i]);
