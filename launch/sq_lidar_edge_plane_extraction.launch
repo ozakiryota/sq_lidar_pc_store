@@ -1,0 +1,40 @@
+<launch>
+	<!-- param -->
+	<param name="use_sim_time" value="true"/>
+
+	<!-- rosbag -->
+	<node pkg="rosbag" type="play" name="player" args="--clock /home/amsl/ozaki/bagfiles/sq2/outdoor_dkan/2018-12-11-13-37-56.bag"/>
+	
+	<!-- rviz -->
+	<node pkg="rviz" type="rviz" name="rviz" args="-d $(find sq_lidar_pc_store)/rviz_config/sq_lidar_edge_plane_extraction.rviz"/>
+
+	<!-- MAIN -->
+	<node pkg="sq_lidar" name="sq_lidar" type="sq_lidar">
+		<param name="fixed_frame" value="/base_link"/>
+		<remap from="~/scan" to="/sq_lidar/scan"/>
+		<remap from="~/cloud" to="/cloud"/>
+	</node>
+	<node pkg="sq_lidar_pc_store" name="sq_lidar_edge_plane_extraction" type="sq_lidar_edge_plane_extraction" output="screen">
+		<!-- <param name="frame_id" type="string" value="/base_link"/> -->
+		<!-- <param name="curvature_region" type="int" value="5"/> -->
+		<param name="th_flatness_edge" type="double" value="5.0e-1"/>
+		<param name="th_flatness_plane" type="double" value="5.0e-3"/>
+	</node>
+
+	<!-- for visualization -->
+	<node pkg="pc_store" name="pc_store" type="pc_srore_with_odometry">
+		<remap from="/cloud" to="/cloud/with_flatness"/>
+		<remap from="/cloud/stored" to="/cloud/with_flatness/stored"/>
+		<param name="limited_num_scans" type="int" value="200"/>
+	</node>
+	<node pkg="pc_store" name="edge_pc_store" type="pc_srore_with_odometry">
+		<remap from="/cloud" to="/cloud/edge"/>
+		<remap from="/cloud/stored" to="/cloud/edge/stored"/>
+		<param name="limited_num_scans" type="int" value="200"/>
+	</node>
+	<node pkg="pc_store" name="plane_pc_store" type="pc_srore_with_odometry">
+		<remap from="/cloud" to="/cloud/plane"/>
+		<remap from="/cloud/stored" to="/cloud/plane/stored"/>
+		<param name="limited_num_scans" type="int" value="200"/>
+	</node>
+</launch>
