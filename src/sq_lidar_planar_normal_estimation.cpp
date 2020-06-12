@@ -69,7 +69,7 @@ SQLidarPlanarNormalEstimation::SQLidarPlanarNormalEstimation()
 	std::cout << "_frame_id = " << _frame_id << std::endl;
 	_nhPrivate.param("curvature_region", _curvature_region, 5);
 	std::cout << "_curvature_region = " << _curvature_region << std::endl;
-	_nhPrivate.param("th_flatness_plane", _th_flatness, 1.0e-3);
+	_nhPrivate.param("th_flatness", _th_flatness, 1.0e-3);
 	std::cout << "_th_flatness = " << _th_flatness << std::endl;
 	_nhPrivate.param("th_assoc_squareddist",  _th_assoc_squareddist, 5.0e-1);
 	std::cout << " _th_assoc_squareddist = " <<  _th_assoc_squareddist << std::endl;
