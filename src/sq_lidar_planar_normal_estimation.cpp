@@ -243,7 +243,7 @@ bool SQLidarPlanarNormalEstimation::estimateNormal(pcl::KdTreeFLANN<pcl::PointNo
 	std::vector<int> list_index;
 	std::vector<float> list_squareddist;
 	kdtree.nearestKSearch(n, k, list_index, list_squareddist);
-	std::cout << "list_squareddist[0] = " << list_squareddist[0] << std::endl;
+	/* std::cout << "list_squareddist[0] = " << list_squareddist[0] << std::endl; */
 	if(list_squareddist[0] >  _th_assoc_squareddist)	return false;
 	Eigen::Vector3d v_now(
 		n.normal_x,
