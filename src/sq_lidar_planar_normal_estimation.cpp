@@ -270,20 +270,25 @@ bool SQLidarPlanarNormalEstimation::estimateNormal(pcl::KdTreeFLANN<pcl::PointNo
 void SQLidarPlanarNormalEstimation::publication(void)
 {
 	/*pc*/
-	// _pc->header.frame_id = _frame_id;
-	sensor_msgs::PointCloud2 msg_pc;
-	pcl::toROSMsg(*_pc, msg_pc);
-	_pub_pc.publish(msg_pc);
+	if(!_pc->points.empty()){
+		sensor_msgs::PointCloud2 msg_pc;
+		pcl::toROSMsg(*_pc, msg_pc);
+		_pub_pc.publish(msg_pc);
+	}
 	/*plane*/
-	_pc_plane_now->header.frame_id = _frame_id;
-	sensor_msgs::PointCloud2 msg_pc_plane;
-	pcl::toROSMsg(*_pc_plane_now, msg_pc_plane);
-	_pub_plane.publish(msg_pc_plane);
+	if(!_pc_plane_now->points.empty()){
+		_pc_plane_now->header.frame_id = _frame_id;
+		sensor_msgs::PointCloud2 msg_pc_plane;
+		pcl::toROSMsg(*_pc_plane_now, msg_pc_plane);
+		_pub_plane.publish(msg_pc_plane);
+	}
 	/*nc*/
-	_nc->header.frame_id = _frame_id;
-	sensor_msgs::PointCloud2 msg_nc;
-	pcl::toROSMsg(*_nc, msg_nc);
-	_pub_nc.publish(msg_nc);
+	if(!_nc->points.empty()){
+		_nc->header.frame_id = _frame_id;
+		sensor_msgs::PointCloud2 msg_nc;
+		pcl::toROSMsg(*_nc, msg_nc);
+		_pub_nc.publish(msg_nc);
+	}
 }
 
 void SQLidarPlanarNormalEstimation::visualization(void)
