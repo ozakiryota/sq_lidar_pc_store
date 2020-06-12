@@ -15,7 +15,7 @@
 		<remap from="~/cloud" to="/cloud"/>
 	</node>
 	<node pkg="sq_lidar_pc_store" name="sq_lidar_planar_normal_estimation" type="sq_lidar_planar_normal_estimation" output="screen">
-		<!-- <param name="frame_id" type="string" value="/base_link"/> -->
+		<!-- <param name="target_frame" type="string" value="/base_link"/> -->
 		<!-- <param name="curvature_region" type="int" value="5"/> -->
 		<param name="th_flatness" type="double" value="5.0e-4"/>
 		<param name="th_assoc_squareddist" type="double" value="5.0"/>

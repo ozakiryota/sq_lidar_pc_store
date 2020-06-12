@@ -39,14 +39,15 @@ class SQLidarPlanarNormalEstimation{
 		bool got_first_odom = false;
 		/*parameter*/
 		const double _laser_range = 40.0;
-		std::string _frame_id;
+		std::string _target_frame;
+		std::string _laser_frame;
 		int _curvature_region;
 		double _th_flatness;
 		double  _th_assoc_squareddist;
 		double _th_cross_angle_deg;
 
 	public:
-		SQLidarPlanarNormalEstimation();
+		SQLidarPlanarNormalEstimation(std::string laser_frame);
 		void callbackOdom(const nav_msgs::OdometryConstPtr& msg);
 		void callbackPC(const sensor_msgs::PointCloud2ConstPtr& msg);
 		void reset(void);
@@ -61,12 +62,14 @@ class SQLidarPlanarNormalEstimation{
 		double angleBetweenVectors(const Eigen::Vector3d& v1, const Eigen::Vector3d& v2);
 };
 
-SQLidarPlanarNormalEstimation::SQLidarPlanarNormalEstimation()
+SQLidarPlanarNormalEstimation::SQLidarPlanarNormalEstimation(std::string laser_frame)
 	: _nhPrivate("~")
 {
+	/*frame*/
+	_laser_frame = laser_frame;
 	/*parameter*/
-	_nhPrivate.param("frame_id", _frame_id, std::string("/base_link"));
-	std::cout << "_frame_id = " << _frame_id << std::endl;
+	_nhPrivate.param("target_frame", _target_frame, std::string("/base_link"));
+	std::cout << "_target_frame = " << _target_frame << std::endl;
 	_nhPrivate.param("curvature_region", _curvature_region, 5);
 	std::cout << "_curvature_region = " << _curvature_region << std::endl;
 	_nhPrivate.param("th_flatness", _th_flatness, 1.0e-3);
@@ -97,16 +100,16 @@ void SQLidarPlanarNormalEstimation::callbackOdom(const nav_msgs::OdometryConstPt
 
 void SQLidarPlanarNormalEstimation::callbackPC(const sensor_msgs::PointCloud2ConstPtr &msg)
 {
-	std::cout << "----------" << std::endl;
-	std::cout << "msg->header.frame_id = " << msg->header.frame_id << std::endl;
-	std::cout << "msg->height*msg->width = " << msg->height*msg->width << std::endl;
-	if(msg->header.frame_id != "laser1_link")	return;
+	/* std::cout << "----------" << std::endl; */
+	/* std::cout << "msg->header.frame_id = " << msg->header.frame_id << std::endl; */
+	/* std::cout << "msg->height*msg->width = " << msg->height*msg->width << std::endl; */
+	if(msg->header.frame_id != _laser_frame)	return;
 	if(!got_first_odom)	return;
 
 	reset();
 
 	sensor_msgs::PointCloud2 pc_trans;
-	if(!transformPCWithTF(*msg, pc_trans, _frame_id, msg->header.stamp))	return;
+	if(!transformPCWithTF(*msg, pc_trans, _target_frame, msg->header.stamp))	return;
 	pcl::fromROSMsg(pc_trans, *_pc);
 	eraseNanPoint();
 
@@ -277,14 +280,14 @@ void SQLidarPlanarNormalEstimation::publication(void)
 	}
 	/*plane*/
 	if(!_pc_plane_now->points.empty()){
-		_pc_plane_now->header.frame_id = _frame_id;
+		_pc_plane_now->header.frame_id = _target_frame;
 		sensor_msgs::PointCloud2 msg_pc_plane;
 		pcl::toROSMsg(*_pc_plane_now, msg_pc_plane);
 		_pub_plane.publish(msg_pc_plane);
 	}
 	/*nc*/
 	if(!_nc->points.empty()){
-		_nc->header.frame_id = _frame_id;
+		_nc->header.frame_id = _target_frame;
 		sensor_msgs::PointCloud2 msg_nc;
 		pcl::toROSMsg(*_nc, msg_nc);
 		_pub_nc.publish(msg_nc);
@@ -326,7 +329,14 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "sq_lidar_planar_normal_estimation");
 	
-	SQLidarPlanarNormalEstimation sq_lidar_planar_normal_estimation;
+	std::vector<std::string> list_frame{
+		"laser1_link",
+		"laser2_link",
+		"laser3_link"
+	};
+	SQLidarPlanarNormalEstimation class0(list_frame[0]);
+	SQLidarPlanarNormalEstimation class1(list_frame[1]);
+	SQLidarPlanarNormalEstimation class2(list_frame[2]);
 
 	ros::spin();
 }
