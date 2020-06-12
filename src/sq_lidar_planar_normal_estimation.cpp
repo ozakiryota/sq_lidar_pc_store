@@ -1,12 +1,12 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud_conversion.h>
+#include <nav_msgs/Odometry.h>
 #include <tf/transform_listener.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/kdtree/kdtree_flann.h>
-#include <pcl_ros/transforms.h>
 #include <pcl/visualization/cloud_viewer.h>
 
 
@@ -17,6 +17,7 @@ class SQLidarPlanarNormalEstimation{
 		ros::NodeHandle _nhPrivate;
 		/*subscriber*/
 		ros::Subscriber _sub_pc;
+		ros::Subscriber _sub_odom;
 		/*publisher*/
 		ros::Publisher _pub_pc;
 		ros::Publisher _pub_plane;
@@ -25,20 +26,25 @@ class SQLidarPlanarNormalEstimation{
 		tf::TransformListener _tflistener;
 		/*point cloud*/
 		pcl::PointCloud<pcl::InterestPoint>::Ptr _pc {new pcl::PointCloud<pcl::InterestPoint>};
-		pcl::PointCloud<pcl::PointNormal>::Ptr _pc_plane {new pcl::PointCloud<pcl::PointNormal>};
+		pcl::PointCloud<pcl::PointNormal>::Ptr _pc_plane_now {new pcl::PointCloud<pcl::PointNormal>};
 		pcl::PointCloud<pcl::PointNormal>::Ptr _pc_plane_last {new pcl::PointCloud<pcl::PointNormal>};
 		pcl::PointCloud<pcl::PointNormal>::Ptr _nc {new pcl::PointCloud<pcl::PointNormal>};
+		/*odom*/
+		nav_msgs::Odometry odom_now;
+		nav_msgs::Odometry odom_last;
 		/*viewer*/
 		pcl::visualization::PCLVisualizer _viewer{"sq_lidar_planar_normal_estimation"};
 		/*parameter*/
 		const double _laser_range = 40.0;
 		std::string _frame_id;
 		int _curvature_region;
-		double _th_flatness_plane;
-		double _th_association;
+		double _th_flatness;
+		double _th_association_dist;
+		double _th_cross_angle_deg;
 
 	public:
 		SQLidarPlanarNormalEstimation();
+		void callbackOdom(const nav_msgs::OdometryConstPtr& msg);
 		void callbackPC(const sensor_msgs::PointCloud2ConstPtr& msg);
 		bool transformPCFrame(const sensor_msgs::PointCloud2& pc2_in, sensor_msgs::PointCloud2& pc2_out, std::string target_frame, ros::Time target_stamp);
 		bool transformPCLPCFrame(const pcl::PointCloud<pcl::PointNormal>::Ptr pc_in, pcl::PointCloud<pcl::PointNormal>::Ptr pc_out, std::string target_frame, ros::Time target_stamp);
@@ -48,6 +54,7 @@ class SQLidarPlanarNormalEstimation{
 		void publication(void);
 		void visualization(void);
 		double norm(double x, double y, double z);
+		double angleBetweenVectors(const Eigen::Vector3d& v1, const Eigen::Vector3d& v2);
 };
 
 SQLidarPlanarNormalEstimation::SQLidarPlanarNormalEstimation()
@@ -58,18 +65,25 @@ SQLidarPlanarNormalEstimation::SQLidarPlanarNormalEstimation()
 	std::cout << "_frame_id = " << _frame_id << std::endl;
 	_nhPrivate.param("curvature_region", _curvature_region, 5);
 	std::cout << "_curvature_region = " << _curvature_region << std::endl;
-	_nhPrivate.param("th_flatness_plane", _th_flatness_plane, 1.0e-3);
-	std::cout << "_th_flatness_plane = " << _th_flatness_plane << std::endl;
-	_nhPrivate.param("th_association", _th_association, 5.0e-1);
-	std::cout << "_th_association = " << _th_association << std::endl;
+	_nhPrivate.param("th_flatness_plane", _th_flatness, 1.0e-3);
+	std::cout << "_th_flatness = " << _th_flatness << std::endl;
+	_nhPrivate.param("th_association", _th_association_dist, 5.0e-1);
+	std::cout << "_th_association_dist = " << _th_association_dist << std::endl;
+	_nhPrivate.param("th_cross_angle_deg", _th_cross_angle_deg, 5.0);
+	std::cout << "_th_cross_angle_deg = " << _th_cross_angle_deg << std::endl;
 	/*sub*/
 	_sub_pc = _nh.subscribe("/cloud", 1, &SQLidarPlanarNormalEstimation::callbackPC, this);
+	_sub_odom = _nh.subscribe("/odom", 1, &SQLidarPlanarNormalEstimation::callbackOdom, this);
 	/*pub*/
 	_pub_pc = _nh.advertise<sensor_msgs::PointCloud2>("/cloud/with_flatness", 1);
 	_pub_plane = _nh.advertise<sensor_msgs::PointCloud2>("/cloud/plane", 1);
 	_pub_nc = _nh.advertise<sensor_msgs::PointCloud2>("/normals", 1);
 	/*viewer*/
 	_viewer.setBackgroundColor(1, 1, 1);
+}
+
+void SQLidarPlanarNormalEstimation::callbackOdom(const nav_msgs::OdometryConstPtr& msg)
+{
 }
 
 void SQLidarPlanarNormalEstimation::callbackPC(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -79,9 +93,9 @@ void SQLidarPlanarNormalEstimation::callbackPC(const sensor_msgs::PointCloud2Con
 	std::cout << "msg->height*msg->width = " << msg->height*msg->width << std::endl;
 	if(msg->header.frame_id != "laser1_link")	return;
 	
-	if(!_pc_plane->points.empty()){
-		if(!transformPCLPCFrame(_pc_plane, _pc_plane_last, _frame_id, msg->header.stamp))	return;
-		_pc_plane->points.clear();
+	if(!_pc_plane_now->points.empty()){
+		if(!transformPCLPCFrame(_pc_plane_now, _pc_plane_last, _frame_id, msg->header.stamp))	return;
+		_pc_plane_now->points.clear();
 		_nc->points.clear();
 	}
 
@@ -89,9 +103,6 @@ void SQLidarPlanarNormalEstimation::callbackPC(const sensor_msgs::PointCloud2Con
 	if(!transformPCFrame(*msg, pc_trans, _frame_id, msg->header.stamp))	return;
 	pcl::fromROSMsg(pc_trans, *_pc);
 	eraseNanPoint();
-
-	/* std::cout << "_pc->header.frame_id = " << _pc->header.frame_id << std::endl; */
-	/* std::cout << "_pc->points.size() = " << _pc->points.size() << std::endl; */
 
 	computeFlatness();
 	publication();
@@ -124,6 +135,8 @@ bool SQLidarPlanarNormalEstimation::transformPCLPCFrame(const pcl::PointCloud<pc
 	toROSMsg(*pc_in, pc2_in);
 	if(transformPCFrame(pc2_in, pc2_out, target_frame, target_stamp)){
 		fromROSMsg(pc2_out, *pc_out);
+		std::cout << "pc_in->points[0] = " << pc_in->points[0] << std::endl;
+		std::cout << "pc_out->points[0] = " << pc_out->points[0] << std::endl;
 		return true;
 	}
 	else	return false;
@@ -171,7 +184,7 @@ void SQLidarPlanarNormalEstimation::computeFlatness(void)
 			_pc->points[i].strength = v_sum_diff.norm()/(depth*depth*2.0*_curvature_region);
 			v_abs_diff.normalize();
 
-			if(_pc->points[i].strength < _th_flatness_plane){
+			if(_pc->points[i].strength < _th_flatness){
 				pcl::PointNormal tmp;
 				tmp.x = _pc->points[i].x;
 				tmp.y = _pc->points[i].y;
@@ -180,7 +193,7 @@ void SQLidarPlanarNormalEstimation::computeFlatness(void)
 				tmp.normal_x = v_abs_diff(0);
 				tmp.normal_y = v_abs_diff(1);
 				tmp.normal_z = v_abs_diff(2);
-				_pc_plane->points.push_back(tmp);
+				_pc_plane_now->points.push_back(tmp);
 
 				if(!_pc_plane_last->points.empty()){
 					if(estimateNormal(kdtree, tmp))	_nc->points.push_back(tmp);
@@ -198,7 +211,7 @@ bool SQLidarPlanarNormalEstimation::estimateNormal(pcl::KdTreeFLANN<pcl::PointNo
 	std::vector<float> list_squareddist;
 	kdtree.nearestKSearch(n, k, list_index, list_squareddist);
 	std::cout << "list_squareddist[0] = " << list_squareddist[0] << std::endl;
-	if(list_squareddist[0] > _th_association)	return false;
+	if(list_squareddist[0] > _th_association_dist)	return false;
 	Eigen::Vector3d v_now(
 		n.normal_x,
 		n.normal_y,
@@ -214,6 +227,8 @@ bool SQLidarPlanarNormalEstimation::estimateNormal(pcl::KdTreeFLANN<pcl::PointNo
 		n.y - _pc_plane_last->points[list_index[0]].y,
 		n.z - _pc_plane_last->points[list_index[0]].z
 	);
+	double cross_angle = angleBetweenVectors(v_rel.cross(v_now), v_rel.cross(v_last));
+	if(cross_angle/M_PI*180.0 > _th_cross_angle_deg)	return false;
 	Eigen::Vector3d v_normal = (v_rel.cross(v_now) + v_rel.cross(v_last)).normalized();
 	/*input*/
 	n.normal_x = v_normal(0);
@@ -230,9 +245,9 @@ void SQLidarPlanarNormalEstimation::publication(void)
 	pcl::toROSMsg(*_pc, msg_pc);
 	_pub_pc.publish(msg_pc);
 	/*plane*/
-	_pc_plane->header.frame_id = _frame_id;
+	_pc_plane_now->header.frame_id = _frame_id;
 	sensor_msgs::PointCloud2 msg_pc_plane;
-	pcl::toROSMsg(*_pc_plane, msg_pc_plane);
+	pcl::toROSMsg(*_pc_plane_now, msg_pc_plane);
 	_pub_plane.publish(msg_pc_plane);
 	/*nc*/
 	_nc->header.frame_id = _frame_id;
@@ -250,10 +265,10 @@ void SQLidarPlanarNormalEstimation::visualization(void)
 	_viewer.addPointCloud<pcl::InterestPoint>(_pc, intensity_distribution, "_pc");
 	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "_pc");
 	/* _viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 0.0, "_pc"); */
-	/*_pc_plane*/
-	_viewer.addPointCloudNormals<pcl::PointNormal>(_pc_plane, 1, 0.5, "_pc_plane");
-	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_COLOR, 1.0, 0.0, 0.0, "_pc_plane");
-	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 3, "_pc_plane");
+	/*_pc_plane_now*/
+	_viewer.addPointCloudNormals<pcl::PointNormal>(_pc_plane_now, 1, 0.5, "_pc_plane_now");
+	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_COLOR, 1.0, 0.0, 0.0, "_pc_plane_now");
+	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 3, "_pc_plane_now");
 	/*_nc*/
 	_viewer.addPointCloudNormals<pcl::PointNormal>(_nc, 1, 0.5, "_nc");
 	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "_nc");
@@ -265,6 +280,11 @@ void SQLidarPlanarNormalEstimation::visualization(void)
 double SQLidarPlanarNormalEstimation::norm(double x, double y, double z)
 {
 	return sqrt(x*x + y*y + z*z);
+}
+
+double SQLidarPlanarNormalEstimation::angleBetweenVectors(const Eigen::Vector3d& v1, const Eigen::Vector3d& v2)
+{
+	return acos(v1.dot(v2)/v1.norm()/v2.norm());
 }
 
 int main(int argc, char** argv)
