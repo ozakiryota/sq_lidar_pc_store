@@ -19,7 +19,7 @@
 		<!-- <param name="curvature_region" type="int" value="5"/> -->
 		<!-- <param name="th_flatness_plane" type="double" value="1.0e&#45;4"/> -->
 		<param name="th_flatness_plane" type="double" value="4.0e-4"/>
-		<param name="th_association" type="double" value="1.0"/>
+		<param name="th_assoc_squareddist" type="double" value="1.0"/>
 		<param name="th_cross_angle_deg" type="double" value="5.0"/>
 	</node>
 
