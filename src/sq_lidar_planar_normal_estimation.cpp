@@ -6,6 +6,7 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/common/transforms.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/visualization/cloud_viewer.h>
 
@@ -30,10 +31,12 @@ class SQLidarPlanarNormalEstimation{
 		pcl::PointCloud<pcl::PointNormal>::Ptr _pc_plane_last {new pcl::PointCloud<pcl::PointNormal>};
 		pcl::PointCloud<pcl::PointNormal>::Ptr _nc {new pcl::PointCloud<pcl::PointNormal>};
 		/*odom*/
-		nav_msgs::Odometry odom_now;
-		nav_msgs::Odometry odom_last;
+		nav_msgs::Odometry _odom_now;
+		nav_msgs::Odometry _odom_last;
 		/*viewer*/
 		pcl::visualization::PCLVisualizer _viewer{"sq_lidar_planar_normal_estimation"};
+		/*flag*/
+		bool got_first_odom = false;
 		/*parameter*/
 		const double _laser_range = 40.0;
 		std::string _frame_id;
@@ -46,8 +49,8 @@ class SQLidarPlanarNormalEstimation{
 		SQLidarPlanarNormalEstimation();
 		void callbackOdom(const nav_msgs::OdometryConstPtr& msg);
 		void callbackPC(const sensor_msgs::PointCloud2ConstPtr& msg);
-		bool transformPCFrame(const sensor_msgs::PointCloud2& pc2_in, sensor_msgs::PointCloud2& pc2_out, std::string target_frame, ros::Time target_stamp);
-		bool transformPCLPCFrame(const pcl::PointCloud<pcl::PointNormal>::Ptr pc_in, pcl::PointCloud<pcl::PointNormal>::Ptr pc_out, std::string target_frame, ros::Time target_stamp);
+		bool transformPCWithTF(const sensor_msgs::PointCloud2& pc2_in, sensor_msgs::PointCloud2& pc2_out, std::string target_frame, ros::Time target_stamp);
+		bool transformPCWithOdom(const pcl::PointCloud<pcl::PointNormal>::Ptr pc_in, pcl::PointCloud<pcl::PointNormal>::Ptr pc_out, nav_msgs::Odometry odom_last, nav_msgs::Odometry odom_now);
 		void eraseNanPoint(void);
 		void computeFlatness(void);
 		bool estimateNormal(pcl::KdTreeFLANN<pcl::PointNormal>& kdtree, pcl::PointNormal& n);
@@ -84,6 +87,11 @@ SQLidarPlanarNormalEstimation::SQLidarPlanarNormalEstimation()
 
 void SQLidarPlanarNormalEstimation::callbackOdom(const nav_msgs::OdometryConstPtr& msg)
 {
+	_odom_now = *msg;
+	if(!got_first_odom){
+		_odom_last = _odom_now;
+		got_first_odom = true;
+	}
 }
 
 void SQLidarPlanarNormalEstimation::callbackPC(const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -94,13 +102,15 @@ void SQLidarPlanarNormalEstimation::callbackPC(const sensor_msgs::PointCloud2Con
 	if(msg->header.frame_id != "laser1_link")	return;
 	
 	if(!_pc_plane_now->points.empty()){
-		if(!transformPCLPCFrame(_pc_plane_now, _pc_plane_last, _frame_id, msg->header.stamp))	return;
+		if(!got_first_odom)	return;
+		transformPCWithOdom(_pc_plane_now, _pc_plane_last, _odom_last, _odom_now);
+		_odom_last = _odom_now;
 		_pc_plane_now->points.clear();
 		_nc->points.clear();
 	}
 
 	sensor_msgs::PointCloud2 pc_trans;
-	if(!transformPCFrame(*msg, pc_trans, _frame_id, msg->header.stamp))	return;
+	if(!transformPCWithTF(*msg, pc_trans, _frame_id, msg->header.stamp))	return;
 	pcl::fromROSMsg(pc_trans, *_pc);
 	eraseNanPoint();
 
@@ -109,7 +119,7 @@ void SQLidarPlanarNormalEstimation::callbackPC(const sensor_msgs::PointCloud2Con
 	visualization();
 }
 
-bool SQLidarPlanarNormalEstimation::transformPCFrame(const sensor_msgs::PointCloud2& pc2_in, sensor_msgs::PointCloud2& pc2_out, std::string target_frame, ros::Time target_stamp)
+bool SQLidarPlanarNormalEstimation::transformPCWithTF(const sensor_msgs::PointCloud2& pc2_in, sensor_msgs::PointCloud2& pc2_out, std::string target_frame, ros::Time target_stamp)
 {
 	sensor_msgs::PointCloud pc1_in;
 	sensor_msgs::PointCloud pc1_out;
@@ -128,18 +138,33 @@ bool SQLidarPlanarNormalEstimation::transformPCFrame(const sensor_msgs::PointClo
 	}
 }
 
-bool SQLidarPlanarNormalEstimation::transformPCLPCFrame(const pcl::PointCloud<pcl::PointNormal>::Ptr pc_in, pcl::PointCloud<pcl::PointNormal>::Ptr pc_out, std::string target_frame, ros::Time target_stamp)
+bool SQLidarPlanarNormalEstimation::transformPCWithOdom(const pcl::PointCloud<pcl::PointNormal>::Ptr pc_in, pcl::PointCloud<pcl::PointNormal>::Ptr pc_out, nav_msgs::Odometry odom_last, nav_msgs::Odometry odom_now)
 {
-	sensor_msgs::PointCloud2 pc2_in;
-	sensor_msgs::PointCloud2 pc2_out;
-	toROSMsg(*pc_in, pc2_in);
-	if(transformPCFrame(pc2_in, pc2_out, target_frame, target_stamp)){
-		fromROSMsg(pc2_out, *pc_out);
-		std::cout << "pc_in->points[0] = " << pc_in->points[0] << std::endl;
-		std::cout << "pc_out->points[0] = " << pc_out->points[0] << std::endl;
-		return true;
-	}
-	else	return false;
+	tf::Quaternion q_now;
+	tf::Quaternion q_last;
+	quaternionMsgToTF(odom_now.pose.pose.orientation, q_now);
+	quaternionMsgToTF(odom_last.pose.pose.orientation, q_last);
+	tf::Quaternion q_rel_rot = q_last*q_now.inverse();
+	q_rel_rot.normalize();	
+	Eigen::Quaternionf rotation(
+		q_rel_rot.w(),
+		q_rel_rot.x(),
+		q_rel_rot.y(),
+		q_rel_rot.z()
+	);
+	tf::Quaternion q_global_move(
+		odom_last.pose.pose.position.x - odom_now.pose.pose.position.x,
+		odom_last.pose.pose.position.y - odom_now.pose.pose.position.y,
+		odom_last.pose.pose.position.z - odom_now.pose.pose.position.z,
+		0.0
+	);
+	tf::Quaternion q_local_move = q_last.inverse()*q_global_move*q_last;
+	Eigen::Vector3f offset(
+		q_local_move.x(),
+		q_local_move.y(),
+		q_local_move.z()
+	);
+	pcl::transformPointCloud(*pc_in, *pc_out, offset, rotation);
 }
 
 void SQLidarPlanarNormalEstimation::eraseNanPoint(void)
