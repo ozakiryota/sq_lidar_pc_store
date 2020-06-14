@@ -8,6 +8,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/common/transforms.h>
 #include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/features/normal_3d.h>
 #include <pcl/visualization/cloud_viewer.h>
 
 
@@ -23,6 +24,7 @@ class SQLidarPlanarNormalEstimation{
 		ros::Publisher _pub_pc;
 		ros::Publisher _pub_plane;
 		ros::Publisher _pub_nc;
+		ros::Publisher _pub_gsphere;
 		/*tf*/
 		tf::TransformListener _tflistener;
 		/*point cloud*/
@@ -30,6 +32,7 @@ class SQLidarPlanarNormalEstimation{
 		pcl::PointCloud<pcl::PointNormal>::Ptr _pc_plane_now {new pcl::PointCloud<pcl::PointNormal>};
 		pcl::PointCloud<pcl::PointNormal>::Ptr _pc_plane_last {new pcl::PointCloud<pcl::PointNormal>};
 		pcl::PointCloud<pcl::PointNormal>::Ptr _nc {new pcl::PointCloud<pcl::PointNormal>};
+		pcl::PointCloud<pcl::PointXYZ>::Ptr _dgsphere {new pcl::PointCloud<pcl::PointXYZ>};
 		/*odom*/
 		nav_msgs::Odometry _odom_now;
 		nav_msgs::Odometry _odom_last;
@@ -38,7 +41,7 @@ class SQLidarPlanarNormalEstimation{
 		/*flag*/
 		bool got_first_odom = false;
 		/*parameter*/
-		const double _laser_range = 40.0;
+		const double _laser_range = 50.0;
 		std::string _target_frame;
 		std::string _laser_frame;
 		int _curvature_region;
@@ -56,6 +59,7 @@ class SQLidarPlanarNormalEstimation{
 		void eraseNanPoint(void);
 		void computeFlatness(void);
 		bool estimateNormal(pcl::KdTreeFLANN<pcl::PointNormal>& kdtree, pcl::PointNormal& n);
+		void dGaussMap(const pcl::PointNormal& n, pcl::PointXYZ& p);
 		void publication(void);
 		void visualization(void);
 		double norm(double x, double y, double z);
@@ -85,8 +89,10 @@ SQLidarPlanarNormalEstimation::SQLidarPlanarNormalEstimation(std::string laser_f
 	_pub_pc = _nh.advertise<sensor_msgs::PointCloud2>("/cloud/with_flatness", 1);
 	_pub_plane = _nh.advertise<sensor_msgs::PointCloud2>("/cloud/plane", 1);
 	_pub_nc = _nh.advertise<sensor_msgs::PointCloud2>("/normals", 1);
+	_pub_gsphere = _nh.advertise<sensor_msgs::PointCloud2>("/gsphere", 1);
 	/*viewer*/
 	_viewer.setBackgroundColor(1, 1, 1);
+	_viewer.addCoordinateSystem(0.5, "axis");
 }
 
 void SQLidarPlanarNormalEstimation::callbackOdom(const nav_msgs::OdometryConstPtr& msg)
@@ -124,6 +130,7 @@ void SQLidarPlanarNormalEstimation::reset(void)
 	_odom_last = _odom_now;
 	_pc_plane_now->points.clear();
 	_nc->points.clear();
+	_dgsphere->points.clear();
 }
 
 bool SQLidarPlanarNormalEstimation::transformPCWithTF(const sensor_msgs::PointCloud2& pc2_in, sensor_msgs::PointCloud2& pc2_out, std::string target_frame, ros::Time target_stamp)
@@ -217,18 +224,26 @@ void SQLidarPlanarNormalEstimation::computeFlatness(void)
 			v_abs_diff.normalize();
 
 			if(_pc->points[i].strength < _th_flatness){
-				pcl::PointNormal tmp;
-				tmp.x = _pc->points[i].x;
-				tmp.y = _pc->points[i].y;
-				tmp.z = _pc->points[i].z;
-				tmp.curvature = _pc->points[i].strength;
-				tmp.normal_x = v_abs_diff(0);
-				tmp.normal_y = v_abs_diff(1);
-				tmp.normal_z = v_abs_diff(2);
-				_pc_plane_now->points.push_back(tmp);
+				pcl::PointNormal tmp_n;
+				tmp_n.x = _pc->points[i].x;
+				tmp_n.y = _pc->points[i].y;
+				tmp_n.z = _pc->points[i].z;
+				tmp_n.curvature = _pc->points[i].strength;
+				tmp_n.normal_x = v_abs_diff(0);
+				tmp_n.normal_y = v_abs_diff(1);
+				tmp_n.normal_z = v_abs_diff(2);
+				_pc_plane_now->points.push_back(tmp_n);
 
 				if(!_pc_plane_last->points.empty()){
-					if(estimateNormal(kdtree, tmp))	_nc->points.push_back(tmp);
+					if(estimateNormal(kdtree, tmp_n)){
+						_nc->points.push_back(tmp_n);
+						std::cout << "tmp_n.normal_x = " << tmp_n.normal_x << std::endl;
+						std::cout << "tmp_n.data_n[0] = " << tmp_n.data_n[0] << std::endl;
+						std::cout << "tmp_n.data_n[3] = " << tmp_n.data_n[3] << std::endl;
+						pcl::PointXYZ tmp_p;
+						dGaussMap(tmp_n, tmp_p);
+						_dgsphere->points.push_back(tmp_p);
+					}
 				}
 			}
 		}
@@ -263,11 +278,23 @@ bool SQLidarPlanarNormalEstimation::estimateNormal(pcl::KdTreeFLANN<pcl::PointNo
 	double cross_angle = angleBetweenVectors(v_rel.cross(v_now), v_rel.cross(v_last));
 	if(cross_angle/M_PI*180.0 > _th_cross_angle_deg)	return false;
 	Eigen::Vector3d v_normal = (v_rel.cross(v_now) + v_rel.cross(v_last)).normalized();
+	/*flip*/
+	flipNormalTowardsViewpoint(n, 0.0, 0.0, 0.0, v_normal);
 	/*input*/
 	n.normal_x = v_normal(0);
 	n.normal_y = v_normal(1);
 	n.normal_z = v_normal(2);
 	return true;
+}
+
+void SQLidarPlanarNormalEstimation::dGaussMap(const pcl::PointNormal& n, pcl::PointXYZ& p)
+{
+	double dot = n.x*n.normal_x + n.y*n.normal_y + n.z*n.normal_z;
+	double n_norm = norm(n.normal_x, n.normal_y, n.normal_z);
+	double depth = dot/n_norm;
+	p.x = -abs(depth)*n.data_n[0];
+	p.y = -abs(depth)*n.data_n[1];
+	p.z = -abs(depth)*n.data_n[2];
 }
 
 void SQLidarPlanarNormalEstimation::publication(void)
@@ -292,6 +319,13 @@ void SQLidarPlanarNormalEstimation::publication(void)
 		pcl::toROSMsg(*_nc, msg_nc);
 		_pub_nc.publish(msg_nc);
 	}
+	/*nc*/
+	if(!_dgsphere->points.empty()){
+		_dgsphere->header.frame_id = _target_frame;
+		sensor_msgs::PointCloud2 msg_gsphere;
+		pcl::toROSMsg(*_dgsphere, msg_gsphere);
+		_pub_gsphere.publish(msg_gsphere);
+	}
 }
 
 void SQLidarPlanarNormalEstimation::visualization(void)
@@ -311,6 +345,10 @@ void SQLidarPlanarNormalEstimation::visualization(void)
 	_viewer.addPointCloudNormals<pcl::PointNormal>(_nc, 1, 0.5, "_nc");
 	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 0.0, 1.0, "_nc");
 	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_LINE_WIDTH, 3, "_nc");
+	/*_dgsphere*/
+	_viewer.addPointCloud(_dgsphere, "_dgsphere");
+	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_COLOR, 0.0, 1.0, 0.0, "_dgsphere");
+	_viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 3, "_dgsphere");
 
 	_viewer.spinOnce();
 }
